@@ -3,11 +3,6 @@
 #include <stdexcept>
 #include <utility>
 
-struct p_t {
-  int x;
-  int y;
-};
-
 class Ints {
 public:
   Ints();
@@ -122,10 +117,14 @@ Ints Ints::operator+(const Ints & rhs) const {
 
   Ints result(getSize(), 0);
   for (size_t i = 0; i < getSize(); i++) {
-    if (rhs.get(i) > std::numeric_limits< int >::max() - get(i) || rhs.get(i) < std::numeric_limits< int >::min() + get(i)) {
+    const int x = get(i);
+    const int y = rhs.get(i);
+
+    if ((x > 0 && y > std::numeric_limits< int >::max() - x)
+        || (x < 0 && y < std::numeric_limits< int >::min() - x)) {
       throw std::invalid_argument("Overflow");
     }
-    result.set(i, rhs.get(i) + get(i));
+    result.set(i, x + y);
   }
 
   return result;
@@ -202,12 +201,15 @@ class Mtx {
   size_t m;
   size_t n;
   Ints data_mtx;
-  // m - кол-во строк  n - кол-во столбцов
 
   public:
   Mtx();
   Mtx(size_t m, size_t n);
   Mtx(size_t m, size_t n, const Ints &data);
+  Mtx(const Mtx & rhs) = default;
+  Mtx(Mtx && rhs) = default;
+  Mtx & operator=(const Mtx & rhs) = default;
+  Mtx & operator=(Mtx && rhs) = default;
   ~Mtx() = default;
 
   Mtx sum(Mtx const& rhs) const;
@@ -237,10 +239,14 @@ Mtx::Mtx(size_t m, size_t n, const Ints &data):
 Mtx Mtx::sum(Mtx const& rhs) const {
   Mtx result(m, n);
   for (size_t i = 0; i < data_mtx.getSize(); i++) {
-    if (rhs.data_mtx.get(i) > std::numeric_limits< int >::max() - data_mtx.get(i)) {
+    const int x = data_mtx.get(i);
+    const int y = rhs.data_mtx.get(i);
+
+    if ((x > 0 && y > std::numeric_limits< int >::max() - x)
+        || (x < 0 && y < std::numeric_limits< int >::min() - x)) {
       throw std::logic_error("Overflow");
     }
-    result.data_mtx.set(i, rhs.data_mtx.get(i) + data_mtx.get(i));
+    result.data_mtx.set(i, x + y);
   }
 
   return result;
@@ -336,14 +342,97 @@ int Mtx::det() const{
 class Mtxs {
 public:
   Mtxs();
+  explicit Mtxs(size_t const size);
   Mtxs(size_t const size, const Mtx & mtx);
+  Mtxs(size_t const size, const Mtx * data);
   Mtxs(const Mtxs & rhs);
   Mtxs(Mtxs && rhs) noexcept;
   ~Mtxs();
 
   Mtxs & operator=(const Mtxs & rhs);
+  Mtxs & operator=(Mtxs && rhs) noexcept;
 
-  Mtxs &operator=(Mtxs &&rhs) noexcept;
+  Mtx & operator[](const size_t i);
+  const Mtx & operator[](const size_t i) const;
+
+  Mtxs operator+(const Mtxs & rhs) const;
+  Mtxs operator+(Mtxs && rhs) const;
+
+  size_t getSize() const noexcept;
+  bool empty() const noexcept;
+  bool notEmpty() const noexcept;
+
+  Mtxs erase(const size_t ind) const {
+    if (ind >= size) throw std::out_of_range("Out of range");
+    Mtxs res(size-1);
+
+    size_t p = 0;
+    for (size_t i = 0; i < size; i++) {
+      if (i == ind) continue;
+      res[p++] = (*this)[i];
+    }
+
+    return res;
+  }
+
+  Mtxs erase(const size_t l, const size_t r) const {
+    if (l > r || r > size) throw std::out_of_range("Out of range");
+    Mtxs res(size - (r-l));
+    size_t i = 0;
+
+    for (; i < l; i++) {
+      res[i] = (*this)[i];
+    }
+    i += r-l;
+    for (size_t j = l; j < res.size; j++) {
+      res[j] = (*this)[i];
+      i++;
+    }
+
+    return res;
+  }
+
+  Mtxs erase() const {
+    if (size == 0) throw std::logic_error("Can't erase empty arr");
+    return erase(size-1);
+  }
+
+  Mtxs insert(size_t const ind, const Mtx & mtx) const {
+    if (ind > size) throw std::out_of_range("Out of range");
+    Mtxs res(size+1);
+    size_t p = 0;
+
+    for (size_t i = 0; i < size+1; i++) {
+      if (i == ind) {
+        res[i] = mtx;
+        continue;
+      }
+      res[i] = (*this)[p++];
+    }
+
+    return res;
+  }
+
+  Mtxs insert(size_t ind, const Mtxs & mtxs) const {
+    if (ind > size) throw std::out_of_range("Out of range");
+    if (std::numeric_limits< size_t >::max() - size < mtxs.size) {
+      throw std::logic_error("Overflow");
+    }
+    Mtxs res(size+mtxs.size);
+    size_t p = 0;
+
+    for (size_t i = 0; i < ind; i++) res[p++] = (*this)[i];
+    for (size_t i = 0; i < mtxs.size; i++) res[p++] = mtxs[i];
+    for (size_t i = ind; i < size; i++) res[p++] = (*this)[i];
+
+    return res;
+  }
+
+  Mtxs insert(const Mtx & mtx) const {
+    return insert(size, mtx);
+  }
+
+  Mtx conv(Mtx acc, Mtx (*t)(Mtx, Mtx)) const;
 
 private:
   size_t size;
@@ -352,6 +441,10 @@ private:
 
 Mtxs::Mtxs():
   size(0), arr_mtx(nullptr)
+{}
+
+Mtxs::Mtxs(size_t const size):
+  size(size), arr_mtx(new Mtx[size])
 {}
 
 Mtxs::Mtxs(const size_t size, const Mtx & mtx):
@@ -367,11 +460,29 @@ Mtxs::Mtxs(const size_t size, const Mtx & mtx):
   }
 }
 
+Mtxs::Mtxs(size_t const size, const Mtx * data):
+  size(size), arr_mtx(new Mtx[size])
+{
+  for (size_t i = 0; i < size; i++) {
+    try {
+      arr_mtx[i] = data[i];
+    } catch (...) {
+      delete [] arr_mtx;
+      throw;
+    }
+  }
+}
+
 Mtxs::Mtxs(const Mtxs & rhs):
   size(rhs.size), arr_mtx(new Mtx[rhs.size])
 {
   for (size_t i = 0; i < size; i++) {
-    arr_mtx[i] = rhs.arr_mtx[i];
+    try {
+      arr_mtx[i] = rhs.arr_mtx[i];
+    } catch (...) {
+      delete [] arr_mtx;
+      throw;
+    }
   }
 }
 
@@ -415,109 +526,76 @@ Mtxs::~Mtxs()
   delete [] arr_mtx;
 }
 
-
-class Points {
-  Ints data_points;
-public:
-  Points():
-    data_points(Ints())
-  {}
-
-  Points(const Ints &data):
-    data_points(data)
-  {}
-
-  ~Points() = default;
-
-  void set(const size_t id, const p_t p) noexcept {
-    data_points.set(id*2, p.x);
-    data_points.set(id*2+1, p.y);
-  }
-
-  p_t get(const size_t id) const noexcept {
-    p_t res;
-    res.x = data_points.get(id*2);
-    res.y = data_points.get(id*2+1);
-
-    return res;
-  }
-
-  Points append(p_t p) const {
-    size_t const size = data_points.getSize();
-
-    if (size > std::numeric_limits<size_t>::max() - 1) {
-      throw std::logic_error("Overflow");
-    }
-
-    Ints tmp(size+2);
-
-    for (size_t i = 0; i < size; i++) {
-      tmp.set(i, data_points.get(i));
-    }
-
-    tmp.set(size, p.x);
-    tmp.set(size+1, p.y);
-
-    return tmp;
-  }
-};
-
-class Plot
-{
-public:
-  void set(const int x, const int y);
-  int calc(int x) const;
-  int solve(Ints & buf, int y) const;
-  Points append(p_t p) const;
-private:
-  Ints data_plot;
-};
-
-void Plot::set(const int x, const int y) {
-  for (size_t i = 0; i < data_plot.getSize(); i+=2) {
-    if (data_plot.get(i) == x) {
-      data_plot.set(i+1, y);
-      return;
-    }
-  }
-
-  data_plot = data_plot.append(x);
-  data_plot = data_plot.append(y);
+const Mtx & Mtxs::operator[](const size_t i) const {
+  return arr_mtx[i];
 }
 
-int Plot::calc(const int x) const {
-  for (size_t i = 0; i < data_plot.getSize(); i+=2) {
-    if (data_plot.get(i) == x) {
-      return data_plot.get(i+1);
-    }
-  }
-
-  throw std::logic_error("Point not found");
+Mtx & Mtxs::operator[](const size_t i) {
+  return arr_mtx[i];
 }
 
-int Plot::solve(Ints & buf, const int y) const {
-  int cnt = 0;
-  for (size_t i = 1; i < data_plot.getSize(); i+=2) {
-    if (y == data_plot.get(i)) {
-      buf = buf.append(data_plot.get(i-1));
-      cnt++;
-    }
+Mtxs Mtxs::operator+(const Mtxs & rhs) const {
+  if (std::numeric_limits< size_t >::max() - size < rhs.size) {
+    throw std::logic_error("Overflow");
   }
-  return cnt;
-}
 
-Points Plot::append(const p_t p) const {
-  size_t const size = data_plot.getSize();
-  Ints tmp(size + 2);
+  Mtxs res(size + rhs.size);
 
   for (size_t i = 0; i < size; i++) {
-    tmp.set(i, data_plot.get(i));
+    res[i] = (*this)[i];
   }
 
-  tmp.set(size, p.x);
-  tmp.set(size+1, p.y);
+  for (size_t i = size; i < rhs.size + size; i++) {
+    res[i] = rhs.arr_mtx[i - size];
+  }
 
-  return tmp;
+  return res;
+}
+
+Mtxs Mtxs::operator+(Mtxs && rhs) const {
+  if (std::numeric_limits< size_t >::max() - size < rhs.size) {
+    throw std::logic_error("Overflow");
+  }
+
+  Mtxs res(size + rhs.size);
+
+  for (size_t i = 0; i < size; i++) {
+    res[i] = (*this)[i];
+  }
+
+  for (size_t i = size; i < rhs.size + size; i++) {
+    res[i] = std::move(rhs.arr_mtx[i - size]);
+  }
+
+  delete [] rhs.arr_mtx;
+  rhs.size = 0;
+  rhs.arr_mtx = nullptr;
+
+  return res;
+}
+
+size_t Mtxs::getSize() const noexcept {
+  return size;
+}
+
+bool Mtxs::empty() const noexcept {
+  return size == 0;
+}
+
+bool Mtxs::notEmpty() const noexcept {
+  return size != 0;
+}
+
+Mtx Mtxs::conv(Mtx acc, Mtx (*t)(Mtx, Mtx)) const {
+  for (size_t i = 0; i < size; i++) {
+    acc = t(acc, arr_mtx[i]);
+  }
+
+  return acc;
+}
+
+Mtx addMtx(Mtx a, Mtx b) {
+  return a.sum(b);
 }
 
 int main() {
